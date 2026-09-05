@@ -1,6 +1,6 @@
 /**
  * 前端核心應用程式狀態機 (StockBattleApp)
- * 負責 WebSocket 雙向通訊、房間大廳管理、走勢圖連動、即時下單、資產更新與排行榜渲染
+ * 負責 WebSocket 通訊、同步交易回合、走勢圖、下單、資產與回合排行榜渲染
  */
 
 import { StockChart } from './chart.js';
@@ -23,6 +23,8 @@ class StockBattleApp {
     this.roomStatus = 'WAITING';
     this.remainingSeconds = 0;
     this.durationSeconds = 300;
+    this.totalRounds = 10;
+    this.currentRound = 0;
     this.players = [];
 
     // 股票市場資料 (初始 4 檔)
@@ -118,6 +120,7 @@ class StockBattleApp {
       roomCodeDisplay: document.getElementById('roomCodeDisplay'),
       gameStatusBadge: document.getElementById('gameStatusBadge'),
       timerDigits: document.getElementById('timerDigits'),
+      roundLabel: document.getElementById('roundLabel'),
       userNameDisplay: document.getElementById('userNameDisplay'),
       btnStartGame: document.getElementById('btnStartGame'),
       btnOpenLobby: document.getElementById('btnOpenLobby'),
@@ -175,6 +178,7 @@ class StockBattleApp {
       formJoinRoom: document.getElementById('formJoinRoom'),
       createHostName: document.getElementById('createHostName'),
       createDuration: document.getElementById('createDuration'),
+      createRoundDuration: document.getElementById('createRoundDuration'),
       createInitialCash: document.getElementById('createInitialCash'),
       joinRoomCode: document.getElementById('joinRoomCode'),
       joinPlayerName: document.getElementById('joinPlayerName'),
@@ -308,6 +312,15 @@ class StockBattleApp {
         this.handleAccountUpdate(payload);
         break;
 
+      case 'TURN_STATE':
+        this.currentRound = payload.currentRound;
+        this.totalRounds = payload.totalRounds;
+        this.remainingSeconds = payload.remainingTurnSeconds ?? this.remainingSeconds;
+        this.dom.roundLabel.textContent = `第 ${this.currentRound}/${this.totalRounds} 輪`;
+        this.updateTimerDisplay(this.remainingSeconds);
+        if (payload.phase === 'REVEAL') this.showToast(payload.message, 'success');
+        break;
+
       case 'LEADERBOARD':
         this.handleLeaderboard(payload);
         break;
@@ -334,6 +347,8 @@ class StockBattleApp {
     this.roomStatus = state.status;
     this.durationSeconds = state.durationSeconds;
     this.remainingSeconds = state.remainingSeconds;
+    this.totalRounds = state.totalRounds || 10;
+    this.currentRound = state.currentRound || 0;
     this.players = state.players || [];
     this.isHost = state.hostId === this.playerId;
 
@@ -351,6 +366,9 @@ class StockBattleApp {
 
     // 更新倒數時鐘
     this.updateTimerDisplay(this.remainingSeconds);
+    this.dom.roundLabel.textContent = this.roomStatus === 'WAITING'
+      ? `共 ${this.totalRounds} 輪`
+      : `第 ${this.currentRound}/${this.totalRounds} 輪`;
 
     // 房主控制按鈕切換
     if (this.isHost && this.roomStatus === 'WAITING') {
@@ -404,12 +422,12 @@ class StockBattleApp {
     itemEl.className = 'news-item highlight';
     if (shockPercent > 0) {
       itemEl.classList.add('positive');
-      itemEl.textContent = ` [🔥 利多暴漲 +${shockPercent}%] ${title} `;
+      itemEl.textContent = ` [利多 +${shockPercent}%] ${title} `;
     } else if (shockPercent < 0) {
       itemEl.classList.add('negative');
-      itemEl.textContent = ` [⚡ 黑天鵝重挫 ${shockPercent}%] ${title} `;
+      itemEl.textContent = ` [利空 ${shockPercent}%] ${title} `;
     } else {
-      itemEl.textContent = ` [📢 突發快訊] ${title} `;
+      itemEl.textContent = ` [市場快訊] ${title} `;
     }
 
     this.dom.newsTickerTrack.appendChild(itemEl);
@@ -647,7 +665,7 @@ class StockBattleApp {
         break;
       case 'PLAYING':
         badge.classList.add('playing');
-        badge.textContent = '競技比賽進行中 (LIVE)';
+        badge.textContent = '自由交易中 · 回合結束揭曉';
         break;
       case 'SETTLING':
         badge.classList.add('settling');
@@ -688,26 +706,26 @@ class StockBattleApp {
       totalCost = shares * execPrice;
       this.dom.prevCostLabel.textContent = '預估所需現金:';
       this.dom.prevCostAmount.textContent = `$${Math.round(totalCost).toLocaleString()}`;
-      this.dom.btnSubmitOrder.textContent = `🚀 確認買進 (${shares} 股做多)`;
+      this.dom.btnSubmitOrder.textContent = `確認買進 ${shares} 股`;
     } else if (this.orderSide === 'SELL') {
       execPrice = midPrice * (1 - (impactPercent / 100) * 0.5);
       totalCost = shares * execPrice;
       this.dom.prevCostLabel.textContent = '預估回收現金:';
       this.dom.prevCostAmount.textContent = `$${Math.round(totalCost).toLocaleString()}`;
-      this.dom.btnSubmitOrder.textContent = `📉 確認賣出 (${shares} 股平倉)`;
+      this.dom.btnSubmitOrder.textContent = `確認賣出 ${shares} 股`;
     } else if (this.orderSide === 'SHORT') {
       execPrice = midPrice * (1 - (impactPercent / 100) * 0.5);
       // 融券質押 100% 保證金
       totalCost = shares * execPrice;
       this.dom.prevCostLabel.textContent = '預估凍結保證金:';
       this.dom.prevCostAmount.textContent = `$${Math.round(totalCost).toLocaleString()}`;
-      this.dom.btnSubmitOrder.textContent = `⚔️ 確認融券賣空 (${shares} 股)`;
+      this.dom.btnSubmitOrder.textContent = `確認放空 ${shares} 股`;
     } else if (this.orderSide === 'COVER') {
       execPrice = midPrice * (1 + (impactPercent / 100) * 0.5);
       totalCost = shares * execPrice;
       this.dom.prevCostLabel.textContent = '預估平倉返還現金:';
       this.dom.prevCostAmount.textContent = `$${Math.round(totalCost).toLocaleString()}`;
-      this.dom.btnSubmitOrder.textContent = `🛡️ 確認買回平倉 (${shares} 股)`;
+      this.dom.btnSubmitOrder.textContent = `確認回補 ${shares} 股`;
     }
 
     this.dom.prevAvgPrice.textContent = `$${execPrice.toFixed(2)}`;
@@ -780,7 +798,8 @@ class StockBattleApp {
     this.dom.formCreateRoom.addEventListener('submit', (e) => {
       e.preventDefault();
       const hostName = this.dom.createHostName.value.trim() || '房主';
-      const durationSeconds = parseInt(this.dom.createDuration.value, 10) || 300;
+      const totalRounds = parseInt(this.dom.createDuration.value, 10) || 10;
+      const roundDurationSeconds = parseInt(this.dom.createRoundDuration.value, 10) || 30;
       const initialCash = parseInt(this.dom.createInitialCash.value, 10) || 1000000;
 
       this.playerName = hostName;
@@ -789,7 +808,8 @@ class StockBattleApp {
 
       this.sendMessage('CREATE_ROOM', {
         hostName,
-        durationSeconds,
+        totalRounds,
+        roundDurationSeconds,
         initialCash,
         playerId: this.playerId
       });

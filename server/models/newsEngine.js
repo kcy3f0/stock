@@ -50,6 +50,28 @@ export class NewsEngine {
     }
   }
 
+  /** 依總回合數安排揭曉新聞的回合（以剩餘回合數比對）。 */
+  scheduleRounds(totalRounds) {
+    this.scheduledTickTimes = [];
+    this.triggeredEventIds.clear();
+    if (totalRounds < 2) return;
+    const count = Math.min(4, Math.max(1, Math.floor(totalRounds / 3)));
+    for (let i = 1; i <= count; i++) {
+      const completedRound = Math.max(1, Math.round((i * totalRounds) / (count + 1)));
+      this.scheduledTickTimes.push(Math.max(0, totalRounds - completedRound));
+    }
+    this.scheduledTickTimes = [...new Set(this.scheduledTickTimes)];
+  }
+
+  onRound(room, roomManager) {
+    if (!room || room.status !== 'PLAYING') return;
+    const idx = this.scheduledTickTimes.indexOf(room.remainingRounds);
+    if (idx !== -1) {
+      this.scheduledTickTimes.splice(idx, 1);
+      this.triggerRandomEvent(room, roomManager);
+    }
+  }
+
   /**
    * 每個 Tick (每秒) 檢查是否到達新聞觸發時刻
    * @param {Object} room 房間物件
@@ -142,7 +164,7 @@ export class NewsEngine {
 
       // 同步廣播跳空後最新行情
       const stocksState = market ? market.getStocksState() : room.marketState;
-      if (stocksState) {
+      if (stocksState && !room.suppressNewsMarketBroadcast) {
         room.marketState = stocksState;
         roomManager.broadcastToRoom(room.roomCode, {
           type: 'MARKET_TICK',

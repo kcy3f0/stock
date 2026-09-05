@@ -1,4 +1,14 @@
-# Project: 股市即時對戰多人連線模擬系統 (Stock Multiplayer Battle Simulation)
+# Project: Discord 回合制多人股市對戰
+
+> 現行版本採「同步交易回合」：所有玩家在每回合固定時間內自由交易，盤中價格與排名不公開；倒數結束後才批次揭曉行情、新聞與排行榜。Discord Bot 是主要入口，網頁 WebSocket 入口保留相容使用。
+
+## Current gameplay
+
+- 房主設定 1–50 個回合、每回合 10–300 秒與初始資金。
+- 每回合內所有玩家可不限次使用 BUY、SELL、SHORT、COVER。
+- 個人成交回報立即私下提供；全房行情、新聞及排名只在回合結束公開一次。
+- 最後一輪揭曉後，以最終公允價強制平倉並公布冠軍。
+- Discord 使用單一 `/stock` 斜線指令與 create、join、start、trade、market、portfolio、status、help 子指令。
 
 ## Architecture
 本專案為高效能、低延遲多人即時股票交易對戰模擬系統，採用權威伺服器 (Authoritative Server) 與雙向低延遲 WebSocket 架構。

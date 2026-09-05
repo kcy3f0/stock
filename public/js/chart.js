@@ -13,10 +13,10 @@ export class StockChart {
     this.ctx = canvas.getContext('2d');
     this.options = Object.assign({
       mode: 'line', // 'line' | 'candle'
-      colorUp: '#00f090',
-      colorDown: '#ff3366',
-      gridColor: 'rgba(35, 49, 77, 0.6)',
-      textColor: '#94a3b8',
+      colorUp: '#25d695',
+      colorDown: '#ff5f76',
+      gridColor: 'rgba(34, 43, 58, 0.58)',
+      textColor: '#8995a8',
       fontMono: '11px "JetBrains Mono", monospace',
       padding: { top: 25, right: 65, bottom: 25, left: 15 },
       maxPoints: 120 // 圖表上最多顯示的歷史點數
@@ -283,11 +283,11 @@ export class StockChart {
     // 1. 下方漸層填充
     const grad = ctx.createLinearGradient(0, top, 0, top + plotH);
     if (isUp) {
-      grad.addColorStop(0, 'rgba(0, 240, 144, 0.28)');
-      grad.addColorStop(1, 'rgba(0, 240, 144, 0.00)');
+      grad.addColorStop(0, 'rgba(37, 214, 149, 0.22)');
+      grad.addColorStop(1, 'rgba(37, 214, 149, 0.00)');
     } else {
-      grad.addColorStop(0, 'rgba(255, 51, 102, 0.28)');
-      grad.addColorStop(1, 'rgba(255, 51, 102, 0.00)');
+      grad.addColorStop(0, 'rgba(255, 95, 118, 0.22)');
+      grad.addColorStop(1, 'rgba(255, 95, 118, 0.00)');
     }
 
     ctx.beginPath();
@@ -382,7 +382,7 @@ export class StockChart {
     if (isNaN(currentY)) return;
 
     ctx.save();
-    ctx.strokeStyle = 'rgba(245, 158, 11, 0.85)';
+    ctx.strokeStyle = 'rgba(255, 189, 74, 0.85)';
     ctx.setLineDash([4, 4]);
     ctx.lineWidth = 1.2;
 
@@ -397,7 +397,7 @@ export class StockChart {
     const badgeX = left + plotW + 2;
     const badgeY = currentY - badgeH / 2;
 
-    ctx.fillStyle = '#f59e0b';
+    ctx.fillStyle = '#ffbd4a';
     ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
 
     ctx.font = 'bold 11px "JetBrains Mono", monospace';
@@ -437,7 +437,7 @@ export class StockChart {
     const badgeW = 60;
     const badgeH = 18;
 
-    ctx.fillStyle = '#3b82f6';
+    ctx.fillStyle = '#4d7cff';
     ctx.fillRect(left + plotW + 2, y - badgeH / 2, badgeW, badgeH);
 
     ctx.font = this.options.fontMono;

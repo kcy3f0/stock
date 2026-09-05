@@ -17,6 +17,11 @@ export const ROOM_STATUS = {
   FINISHED: 'FINISHED'  // 比賽結束
 };
 
+const DEFAULT_ROUNDS = 10;
+const MIN_ROUNDS = 1;
+const MAX_ROUNDS = 50;
+const DEFAULT_ROUND_SECONDS = 30;
+
 export class RoomManager {
   constructor() {
     /** @type {Map<string, Object>} roomCode -> Room */
@@ -88,17 +93,21 @@ export class RoomManager {
   /**
    * 建立新房間，並初始化專屬市場引擎、新聞排程引擎與交易結算引擎
    * @param {WebSocket} ws 
-   * @param {Object} payload { hostName, durationSeconds, initialCash, playerId }
+   * @param {Object} payload { hostName, totalRounds, initialCash, playerId }
    * @returns {Object} 建立之房間資訊
    */
   createRoom(ws, payload = {}) {
     const playerId = payload.playerId || ws.playerId || `p_${Math.random().toString(36).slice(2, 9)}`;
     const hostName = (payload.hostName || '玩家').trim().slice(0, 16) || '玩家';
     
-    // 比賽時長限制 30 ~ 600 秒，預設 300 秒 (5分鐘)
-    let durationSeconds = parseInt(payload.durationSeconds, 10);
-    if (isNaN(durationSeconds) || durationSeconds < 30 || durationSeconds > 600) {
-      durationSeconds = 300;
+    // 回合數限制 1 ~ 50 輪。durationSeconds 僅作舊版客戶端的相容輸入。
+    let totalRounds = parseInt(payload.totalRounds ?? payload.rounds, 10);
+    if (!Number.isInteger(totalRounds) || totalRounds < MIN_ROUNDS || totalRounds > MAX_ROUNDS) {
+      totalRounds = DEFAULT_ROUNDS;
+    }
+    let roundDurationSeconds = parseInt(payload.roundDurationSeconds, 10);
+    if (!Number.isInteger(roundDurationSeconds) || roundDurationSeconds < 10 || roundDurationSeconds > 300) {
+      roundDurationSeconds = DEFAULT_ROUND_SECONDS;
     }
 
     // 初始資金預設 $1,000,000
@@ -131,8 +140,14 @@ export class RoomManager {
       roomCode,
       status: ROOM_STATUS.WAITING,
       hostId: playerId,
-      durationSeconds,
-      remainingSeconds: durationSeconds,
+      totalRounds,
+      roundDurationSeconds,
+      remainingTurnSeconds: roundDurationSeconds,
+      currentRound: 0,
+      remainingRounds: totalRounds,
+      // 舊版欄位保留，值代表輪數而非秒數。
+      durationSeconds: totalRounds,
+      remainingSeconds: totalRounds,
       initialCash,
       createdAt: Date.now(),
       startedAt: null,
@@ -157,7 +172,7 @@ export class RoomManager {
     // 回應建立者房間狀態
     this.sendRoomState(room, ws);
 
-    console.log(`[RoomManager] 房間建立成功: ${roomCode} | 房主: ${hostName} (${playerId}) | 時長: ${durationSeconds}s`);
+    console.log(`[RoomManager] 房間建立成功: ${roomCode} | 房主: ${hostName} (${playerId}) | 共 ${totalRounds} 輪`);
     return room;
   }
 
@@ -270,14 +285,21 @@ export class RoomManager {
 
     room.status = ROOM_STATUS.PLAYING;
     room.startedAt = Date.now();
-    room.remainingSeconds = room.durationSeconds;
+    room.currentRound = 1;
+    room.remainingRounds = room.totalRounds;
+    room.remainingTurnSeconds = room.roundDurationSeconds;
+    room.remainingSeconds = room.remainingTurnSeconds;
 
     // 初始化突發新聞事件時間排程
     if (room.newsEngine) {
-      room.newsEngine.scheduleEvents(room.durationSeconds);
+      if (typeof room.newsEngine.scheduleRounds === 'function') {
+        room.newsEngine.scheduleRounds(room.totalRounds);
+      } else {
+        room.newsEngine.scheduleEvents(room.totalRounds);
+      }
     }
 
-    console.log(`[RoomManager] 房間 ${roomCode} 比賽正式開始！時長: ${room.durationSeconds}s`);
+    console.log(`[RoomManager] 房間 ${roomCode} 回合制比賽開始！共 ${room.totalRounds} 輪`);
 
     // 支援外部擴充回調
     if (typeof this.onGameStart === 'function') {
@@ -297,96 +319,105 @@ export class RoomManager {
       }
     });
 
-    // 啟動房間秒級計時心跳
-    room.timer = setInterval(() => {
-      this.handleTick(room);
-    }, 1000);
+    this.broadcastRoundState(room, 'TRADING');
+    room.timer = setInterval(() => this.handleTick(room), 1000);
   }
 
   /**
-   * 每秒心跳循環處理 (GBM+OU 市場跳動、新聞排程、資產動態標記市價、即時廣播)
-   * @param {Object} room 
+   * 同步交易回合沒有個人行動權；保留此入口作為查詢/準備回覆。
    */
+  endTurn(ws, payload = {}) {
+    const room = this.rooms.get(payload.roomCode || ws.roomId);
+    if (!room || room.status !== ROOM_STATUS.PLAYING) {
+      this.sendTo(ws, { type: 'ERROR', payload: { code: 'MARKET_CLOSED', message: '目前沒有進行中的回合' } });
+      return false;
+    }
+    this.sendTo(ws, { type: 'TURN_ACK', payload: { success: true, action: 'READY', message: '本回合仍可繼續自由交易，將在倒數結束後統一揭曉' } });
+    return true;
+  }
+
+  /** 倒數結束後揭曉市場、新聞、資產與排行榜。 */
+  completeRound(room) {
+    if (room.marketEngine) {
+      room.marketEngine.tick();
+      room.marketState = room.marketEngine.getStocksState();
+    }
+
+    room.remainingRounds = Math.max(0, room.totalRounds - room.currentRound);
+    room.remainingSeconds = 0;
+
+    if (room.newsEngine) {
+      room.suppressNewsMarketBroadcast = true;
+      if (typeof room.newsEngine.onRound === 'function') room.newsEngine.onRound(room, this);
+      else room.newsEngine.onTick(room, this);
+      room.suppressNewsMarketBroadcast = false;
+    }
+
+    this.updateAccountsAndBroadcast(room);
+    this.broadcastRoundState(room, 'REVEAL');
+
+    if (room.currentRound >= room.totalRounds) {
+      this.endGame(room);
+      return;
+    }
+    room.currentRound += 1;
+    room.remainingTurnSeconds = room.roundDurationSeconds;
+    room.remainingSeconds = room.remainingTurnSeconds;
+    this.broadcastRoomState(room);
+    this.broadcastRoundState(room, 'TRADING');
+  }
+
+  updateAccountsAndBroadcast(room) {
+    const prices = room.marketEngine ? room.marketEngine.getPrices() : room.marketState;
+    const rankings = [];
+    for (const player of room.players.values()) {
+      room.tradingEngine?.updatePlayerFinancials(player, prices);
+      this.sendTo(player.ws, {
+        type: 'ACCOUNT_UPDATE',
+        payload: { cash: player.cash, netWorth: player.netWorth, frozenMargin: player.frozenMargin || 0, pnl: player.pnl, pnlPercent: player.pnlPercent, positions: player.positions }
+      });
+      rankings.push({ playerId: player.id, playerName: player.name, netWorth: player.netWorth, pnlPercent: player.pnlPercent });
+    }
+    rankings.sort((a, b) => b.netWorth - a.netWorth).forEach((p, i) => { p.rank = i + 1; });
+    this.broadcastToRoom(room.roomCode, { type: 'MARKET_TICK', payload: { timestamp: Date.now(), remainingRounds: room.remainingRounds, currentRound: room.currentRound, stocks: room.marketState } });
+    this.broadcastToRoom(room.roomCode, { type: 'LEADERBOARD', payload: { rankings } });
+  }
+
+  broadcastRoundState(room, phase) {
+    this.broadcastToRoom(room.roomCode, {
+      type: 'TURN_STATE',
+      payload: {
+        phase,
+        currentRound: room.currentRound,
+        totalRounds: room.totalRounds,
+        remainingRounds: room.remainingRounds,
+        remainingTurnSeconds: room.remainingTurnSeconds,
+        message: phase === 'REVEAL' ? `第 ${room.currentRound} 輪結果揭曉` : `第 ${room.currentRound} 輪自由交易中`
+      }
+    });
+  }
+
+  /** 每秒只更新回合倒數；價格與排名僅在回合結束時公開。 */
   handleTick(room) {
     if (room.status !== ROOM_STATUS.PLAYING) return;
 
-    room.remainingSeconds--;
-
-    // 若有外部擴充 hook 優先執行之
+    room.remainingTurnSeconds = Math.max(0, room.remainingTurnSeconds - 1);
+    room.remainingSeconds = room.remainingTurnSeconds;
     if (typeof this.onRoomTick === 'function') {
       try {
         this.onRoomTick(room);
       } catch (err) {
         console.error(`[RoomManager] onRoomTick 錯誤 (房間 ${room.roomCode}):`, err);
       }
-    } else {
-      // 1. 市場引擎離散跳動
-      if (room.marketEngine) {
-        room.marketEngine.tick();
-        room.marketState = room.marketEngine.getStocksState();
-      }
-
-      // 2. 新聞引擎檢查並觸發排程事件
-      if (room.newsEngine) {
-        room.newsEngine.onTick(room, this);
-      }
-
-      // 3. 所有玩家持倉 Mark-to-Market 損益與淨資產更新
-      const prices = room.marketEngine ? room.marketEngine.getPrices() : room.marketState;
-      for (const player of room.players.values()) {
-        if (room.tradingEngine) {
-          room.tradingEngine.updatePlayerFinancials(player, prices);
-        }
-        if (player.ws && player.ws.readyState === 1 /* OPEN */) {
-          this.sendTo(player.ws, {
-            type: 'ACCOUNT_UPDATE',
-            payload: {
-              cash: player.cash,
-              netWorth: player.netWorth,
-              pnl: player.pnl,
-              pnlPercent: player.pnlPercent,
-              positions: player.positions
-            }
-          });
-        }
-      }
-
-      // 4. 廣播最新市場動態行情 MARKET_TICK
-      this.broadcastToRoom(room.roomCode, {
-        type: 'MARKET_TICK',
-        payload: {
-          timestamp: Date.now(),
-          remainingSeconds: room.remainingSeconds,
-          stocks: room.marketState
-        }
-      });
-
-      // 5. 廣播即時排行榜 LEADERBOARD
-      const rankings = Array.from(room.players.values())
-        .map(p => ({
-          rank: 1,
-          playerId: p.id,
-          playerName: p.name,
-          netWorth: p.netWorth,
-          pnlPercent: p.pnlPercent
-        }))
-        .sort((a, b) => b.netWorth - a.netWorth)
-        .map((p, idx) => ({ ...p, rank: idx + 1 }));
-
-      this.broadcastToRoom(room.roomCode, {
-        type: 'LEADERBOARD',
-        payload: { rankings }
-      });
     }
 
-    // 當倒數歸零時觸發終局強制平倉結算
-    if (room.remainingSeconds <= 0) {
-      this.endGame(room);
+    if (room.remainingTurnSeconds <= 0) {
+      this.completeRound(room);
       return;
     }
 
-    // 每 5 秒廣播一次標準 ROOM_STATE（其餘時間由行情 tick 同步 remainingSeconds）
-    if (room.remainingSeconds % 5 === 0) {
+    // 只同步倒數，不洩漏本輪盤中價格或排名。
+    if (room.remainingTurnSeconds % 5 === 0 || room.remainingTurnSeconds <= 5) {
       this.broadcastRoomState(room);
     }
   }
@@ -528,18 +559,7 @@ export class RoomManager {
       const result = room.tradingEngine.processOrder(room, player, payload);
 
       if (result.success) {
-        // 1. 先廣播受影響標的之最新行情 MARKET_TICK，確保客戶端收到最新市價
-        room.marketState = room.marketEngine ? room.marketEngine.getStocksState() : room.marketState;
-        this.broadcastToRoom(room.roomCode, {
-          type: 'MARKET_TICK',
-          payload: {
-            timestamp: Date.now(),
-            remainingSeconds: room.remainingSeconds,
-            stocks: room.marketState
-          }
-        });
-
-        // 2. 推播下單玩家最新帳戶狀態 ACCOUNT_UPDATE
+        // 成交明細與自己的帳戶私下回覆；全房行情留到回合結束才揭曉。
         this.sendTo(player.ws, {
           type: 'ACCOUNT_UPDATE',
           payload: {
@@ -552,7 +572,6 @@ export class RoomManager {
           }
         });
 
-        // 3. 回覆委託成交成功回條 ORDER_ACK
         this.sendTo(player.ws, {
           type: 'ORDER_ACK',
           payload: result
@@ -642,6 +661,12 @@ export class RoomManager {
       hostId: room.hostId,
       durationSeconds: room.durationSeconds,
       remainingSeconds: room.remainingSeconds,
+      totalRounds: room.totalRounds,
+      roundDurationSeconds: room.roundDurationSeconds,
+      currentRound: room.currentRound,
+      remainingRounds: room.remainingRounds,
+      remainingTurnSeconds: room.remainingTurnSeconds,
+      phase: room.status === ROOM_STATUS.PLAYING ? 'TRADING' : room.status,
       initialCash: room.initialCash,
       players: playersList,
       playerCount: playersList.length,

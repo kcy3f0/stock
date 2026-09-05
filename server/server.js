@@ -172,6 +172,10 @@ function handleWsMessage(ws, rawMessage) {
       roomManager.handleOrder(ws, safePayload);
       break;
 
+    case 'END_TURN':
+      roomManager.endTurn(ws, safePayload);
+      break;
+
     default:
       console.warn(`[WS] 收到未知訊息類型: ${type}`);
       roomManager.sendTo(ws, {

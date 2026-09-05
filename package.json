@@ -1,23 +1,39 @@
 {
   "name": "stock-multiplayer-battle",
   "version": "1.0.0",
-  "description": "即時對戰多人連線股市模擬網頁遊戲",
+  "description": "Discord 回合制多人股票交易對戰遊戲",
   "type": "module",
-  "main": "server/server.js",
+  "main": "server/discordBot.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kcy3f0/stock.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kcy3f0/stock/issues"
+  },
+  "homepage": "https://github.com/kcy3f0/stock#readme",
   "scripts": {
-    "start": "node server/server.js",
-    "test": "node --test tests/**/*.test.mjs"
+    "start": "node server/discordBot.js",
+    "start:discord": "node server/discordBot.js",
+    "start:web": "node server/server.js",
+    "test": "node --test tests/unit/market.test.mjs tests/unit/trading.test.mjs tests/unit/tier5_adversarial.test.mjs tests/unit/round_based.test.mjs",
+    "test:legacy": "node --test tests/**/*.test.mjs"
   },
   "keywords": [
     "stock",
+    "discord-bot",
     "multiplayer",
     "simulation",
     "trading",
     "websocket"
   ],
-  "author": "",
+  "author": "kcy3f0",
   "license": "ISC",
   "dependencies": {
+    "discord.js": "^14.27.0",
     "ws": "^8.18.0"
   }
 }

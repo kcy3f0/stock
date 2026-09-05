@@ -1,0 +1,26 @@
+name: 功能建議
+description: 提議新的玩法、整合或改善
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: checkboxes
+    attributes:
+      label: 提交前檢查
+      options:
+        - label: 我已搜尋現有 Issue，沒有找到相同提案。
+          required: true
+  - type: textarea
+    attributes:
+      label: 想解決的問題
+      description: 請描述使用情境與目前遇到的限制。
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 建議方案
+      description: 說明期望行為、玩家體驗與可能的介面。
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 替代方案與補充資訊
