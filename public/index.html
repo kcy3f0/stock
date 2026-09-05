@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STOCK BATTLE // 多人即時股市對戰終端</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+</head>
+<body class="terminal-body">
+  <!-- 頂部終端導航與競技狀態列 -->
+  <header class="terminal-header">
+    <div class="header-left">
+      <div class="brand-title">
+        <span class="pulse-icon">⚡</span>
+        <span class="brand-text">STOCK BATTLE</span>
+        <span class="brand-sub">QUANT TERMINAL v1.0</span>
+      </div>
+      <div class="connection-status" id="connectionStatus">
+        <span class="status-dot disconnected" id="statusDot"></span>
+        <span class="status-text" id="statusText">連線中...</span>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <div class="room-pill" id="roomPill" title="點擊複製房間代碼">
+        <span class="pill-label">房間代碼</span>
+        <span class="pill-code" id="roomCodeDisplay">------</span>
+        <span class="copy-icon">📋</span>
+      </div>
+      <div class="game-status-badge waiting" id="gameStatusBadge">
+        等待玩家加入
+      </div>
+      <div class="timer-box">
+        <span class="timer-label">剩餘競技時間</span>
+        <span class="timer-digits" id="timerDigits">--:--</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <div class="user-badge">
+        <span class="user-avatar">👤</span>
+        <span class="user-name" id="userNameDisplay">訪客</span>
+      </div>
+      <button class="btn btn-primary" id="btnStartGame" style="display: none;">
+        ▶ 開始比賽
+      </button>
+      <button class="btn btn-outline" id="btnOpenLobby">
+        🏠 房間大廳
+      </button>
+    </div>
+  </header>
+
+  <!-- 突發黑天鵝新聞跑馬燈橫幅 -->
+  <section class="news-ticker-bar">
+    <div class="news-ticker-tag">
+      <span class="flash-icon">🔴</span> 即時快訊
+    </div>
+    <div class="news-ticker-container">
+      <div class="news-ticker-track" id="newsTickerTrack">
+        <span class="news-item highlight">市場開盤待命，準備迎接高頻博弈衝擊...</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 終端主工作區域 Grid -->
+  <main class="terminal-grid">
+    <!-- 左側核心：標的頁籤與動態圖表 -->
+    <section class="chart-section panel-box">
+      <!-- 股票切換頁籤列 -->
+      <div class="stock-tabs-bar" id="stockTabsBar">
+        <button class="stock-tab active" data-symbol="MEGA">
+          <div class="tab-symbol">MEGA</div>
+          <div class="tab-name">穩健藍籌</div>
+          <div class="tab-price" id="tabPrice_MEGA">$150.00</div>
+          <div class="tab-change neutral" id="tabChange_MEGA">+0.00%</div>
+        </button>
+        <button class="stock-tab" data-symbol="NVTX">
+          <div class="tab-symbol">NVTX</div>
+          <div class="tab-name">高科龍頭</div>
+          <div class="tab-price" id="tabPrice_NVTX">$320.00</div>
+          <div class="tab-change neutral" id="tabChange_NVTX">+0.00%</div>
+        </button>
+        <button class="stock-tab" data-symbol="SOLR">
+          <div class="tab-symbol">SOLR</div>
+          <div class="tab-name">新能源</div>
+          <div class="tab-price" id="tabPrice_SOLR">$45.00</div>
+          <div class="tab-change neutral" id="tabChange_SOLR">+0.00%</div>
+        </button>
+        <button class="stock-tab" data-symbol="MEME">
+          <div class="tab-symbol">MEME</div>
+          <div class="tab-name">迷因妖股</div>
+          <div class="tab-price" id="tabPrice_MEME">$12.50</div>
+          <div class="tab-change neutral" id="tabChange_MEME">+0.00%</div>
+        </button>
+      </div>
+
+      <!-- 走勢圖頂部報價與控制工具列 -->
+      <div class="chart-toolbar">
+        <div class="stock-hero-info">
+          <span class="hero-symbol" id="heroSymbol">MEGA</span>
+          <span class="hero-name" id="heroName">穩健藍籌股 (科技權值)</span>
+          <span class="hero-price" id="heroPrice">$150.00</span>
+          <span class="hero-change neutral" id="heroChange">+0.00 (+0.00%)</span>
+          <span class="hero-depth" id="heroDepth">流動池: 100,000 股</span>
+        </div>
+        <div class="chart-controls">
+          <div class="btn-group">
+            <button class="btn-toggle active" id="btnChartModeLine" data-mode="line">分時走勢</button>
+            <button class="btn-toggle" id="btnChartModeCandle" data-mode="candle">K線圖</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas 繪圖畫布容器 -->
+      <div class="canvas-wrapper" id="canvasWrapper">
+        <canvas id="stockCanvas"></canvas>
+        <div class="chart-overlay-info" id="chartCrosshairInfo"></div>
+      </div>
+
+      <!-- 圖表下方統計數據列 -->
+      <div class="chart-footer-stats">
+        <div class="stat-item"><span class="label">開盤價</span><span class="val" id="statOpen">$150.00</span></div>
+        <div class="stat-item"><span class="label">最高價</span><span class="val high" id="statHigh">$150.00</span></div>
+        <div class="stat-item"><span class="label">最低價</span><span class="val low" id="statLow">$150.00</span></div>
+        <div class="stat-item"><span class="label">衝擊敏感度</span><span class="val" id="statAlpha">0.50 (雙曲正切)</span></div>
+      </div>
+    </section>
+
+    <!-- 右側核心：交易下單面板 + 資產儀表板 + 排行榜 -->
+    <aside class="sidebar-section">
+      <!-- 雙向交易下單面板 -->
+      <section class="order-panel panel-box">
+        <div class="panel-header">
+          <span class="panel-title">⚡ 雙向交易委託</span>
+          <span class="market-tag">即時撮合做市</span>
+        </div>
+
+        <!-- 四方向交易切換按鈕 -->
+        <div class="order-sides-grid">
+          <button class="side-btn buy active" data-side="BUY">
+            <span class="side-title">現貨買入</span>
+            <span class="side-sub">做多 BUY</span>
+          </button>
+          <button class="side-btn sell" data-side="SELL">
+            <span class="side-title">現貨賣出</span>
+            <span class="side-sub">平倉 SELL</span>
+          </button>
+          <button class="side-btn short" data-side="SHORT">
+            <span class="side-title">融券賣出</span>
+            <span class="side-sub">做空 SHORT</span>
+          </button>
+          <button class="side-btn cover" data-side="COVER">
+            <span class="side-title">買回平倉</span>
+            <span class="side-sub">補回 COVER</span>
+          </button>
+        </div>
+
+        <!-- 股數與百分比操作列 -->
+        <div class="order-form-body">
+          <div class="input-row">
+            <label for="orderSharesInput">委託股數</label>
+            <div class="input-wrap">
+              <input type="number" id="orderSharesInput" min="1" step="10" placeholder="輸入委託股數" value="100">
+              <span class="input-unit">股</span>
+            </div>
+          </div>
+
+          <div class="percent-btn-row">
+            <button class="btn-pct" data-pct="10">10%</button>
+            <button class="btn-pct" data-pct="25">25%</button>
+            <button class="btn-pct" data-pct="50">50%</button>
+            <button class="btn-pct" data-pct="100">滿倉 (100%)</button>
+          </div>
+
+          <!-- 衝擊與費用即時試算預覽 -->
+          <div class="order-preview-box">
+            <div class="preview-item">
+              <span class="preview-lbl">預估成交均價 (含滑價):</span>
+              <span class="preview-val" id="prevAvgPrice">$150.00</span>
+            </div>
+            <div class="preview-item">
+              <span class="preview-lbl">預估價格衝擊 (Impact):</span>
+              <span class="preview-val" id="prevImpact">+0.05%</span>
+            </div>
+            <div class="preview-item highlight">
+              <span class="preview-lbl" id="prevCostLabel">預估所需現金:</span>
+              <span class="preview-val" id="prevCostAmount">$15,000</span>
+            </div>
+          </div>
+
+          <button class="btn btn-action-submit buy" id="btnSubmitOrder">
+            🚀 確認下單 (做多買進)
+          </button>
+        </div>
+      </section>
+
+      <!-- 玩家即時資產儀表板 -->
+      <section class="portfolio-panel panel-box">
+        <div class="panel-header">
+          <span class="panel-title">💼 帳戶資產淨值</span>
+          <span class="account-tag" id="userRoleBadge">參賽者</span>
+        </div>
+
+        <div class="portfolio-metrics-grid">
+          <div class="metric-card highlight-metric">
+            <div class="metric-label">總淨資產 (NAV)</div>
+            <div class="metric-value" id="valNetWorth">$1,000,000</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">累計報酬率 (ROI)</div>
+            <div class="metric-value neutral" id="valRoi">+0.00%</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">可用現金 (Cash)</div>
+            <div class="metric-value" id="valCash">$1,000,000</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">凍結保證金 (Margin)</div>
+            <div class="metric-value" id="valMargin">$0</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">未實現損益 (Unrealized)</div>
+            <div class="metric-value neutral" id="valUnrealized">$0</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">持倉總市值 (Position)</div>
+            <div class="metric-value" id="valPositionValue">$0</div>
+          </div>
+        </div>
+
+        <!-- 當前持倉摘要 -->
+        <div class="positions-summary">
+          <div class="positions-title">當前持倉部位清單</div>
+          <div class="positions-table-wrap">
+            <table class="positions-table">
+              <thead>
+                <tr>
+                  <th>標的</th>
+                  <th>方向</th>
+                  <th>股數</th>
+                  <th>均價</th>
+                  <th>浮動損益</th>
+                </tr>
+              </thead>
+              <tbody id="positionsTableBody">
+                <tr class="empty-row"><td colspan="5">尚未持有任何標的部位</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 即時對戰排行榜 -->
+      <section class="leaderboard-panel panel-box">
+        <div class="panel-header">
+          <span class="panel-title">🏆 競技即時排行榜</span>
+          <span class="player-count-tag" id="playerCountTag">玩家: 1/8</span>
+        </div>
+        <div class="leaderboard-list" id="leaderboardList">
+          <!-- 動態渲染排名列表 -->
+          <div class="leaderboard-item rank-1">
+            <span class="rank-num">🥇 1</span>
+            <span class="player-name">你 (房主)</span>
+            <span class="player-networth">$1,000,000</span>
+            <span class="player-roi neutral">+0.00%</span>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- 房間大廳對話框 (Modal Overlay) -->
+  <div class="modal-backdrop" id="lobbyModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title">📈 STOCK BATTLE 房間大廳</h2>
+        <p class="modal-subtitle">高頻博弈・價格衝擊・多人即時模擬交易</p>
+      </div>
+
+      <!-- 頁籤按鈕：建立 vs 加入 -->
+      <div class="modal-tabs">
+        <button class="modal-tab-btn active" id="tabCreateRoom">建立新房間</button>
+        <button class="modal-tab-btn" id="tabJoinRoom">加入房間</button>
+      </div>
+
+      <!-- 建立房間表單 -->
+      <form class="modal-form active" id="formCreateRoom">
+        <div class="form-group">
+          <label for="createHostName">玩家暱稱</label>
+          <input type="text" id="createHostName" required maxlength="12" placeholder="請輸入你的暱稱" value="操盤手大亨">
+        </div>
+        <div class="form-group">
+          <label for="createDuration">競技比賽時長</label>
+          <select id="createDuration">
+            <option value="60">1 分鐘 (超高頻急速熱血賽)</option>
+            <option value="180">3 分鐘 (快節奏戰術爭奪)</option>
+            <option value="300" selected>5 分鐘 (標準錦標賽競技)</option>
+            <option value="600">10 分鐘 (深度宏觀週期操盤)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="createInitialCash">初始可用資金</label>
+          <select id="createInitialCash">
+            <option value="500000">$500,000</option>
+            <option value="1000000" selected>$1,000,000 (標準一百萬)</option>
+            <option value="5000000">$5,000,000 (機構超級操盤)</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">
+          ✨ 建立房間並進入大廳
+        </button>
+      </form>
+
+      <!-- 加入房間表單 -->
+      <form class="modal-form" id="formJoinRoom">
+        <div class="form-group">
+          <label for="joinRoomCode">房間代碼 (6 碼英數)</label>
+          <input type="text" id="joinRoomCode" required maxlength="6" placeholder="例如 STK888" style="text-transform: uppercase; font-size: 1.2rem; letter-spacing: 2px;">
+        </div>
+        <div class="form-group">
+          <label for="joinPlayerName">玩家暱稱</label>
+          <input type="text" id="joinPlayerName" required maxlength="12" placeholder="請輸入你的暱稱" value="挑戰者">
+        </div>
+        <button type="submit" class="btn btn-secondary btn-block">
+          🚀 加入對戰房間
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 比賽結算與頒獎模態框 -->
+  <div class="modal-backdrop" id="settlementModal" style="display: none;">
+    <div class="modal-card settlement-card">
+      <div class="settlement-trophy">🏆</div>
+      <h2 class="settlement-title">比賽結束・最終淨值結算</h2>
+      <p class="settlement-subtitle">所有持倉部位已按最終公允市價強制全數平倉</p>
+
+      <!-- 冠軍榮譽展示 -->
+      <div class="winner-spotlight" id="winnerSpotlight">
+        <div class="winner-crown">👑 最終冠軍</div>
+        <div class="winner-name" id="winnerName">--</div>
+        <div class="winner-metric">
+          最終資產: <span id="winnerNetWorth">$0</span>
+          (<span id="winnerRoi">+0.00%</span>)
+        </div>
+      </div>
+
+      <!-- 最終排行榜榜單 -->
+      <div class="final-rank-table-wrap">
+        <table class="final-rank-table">
+          <thead>
+            <tr>
+              <th>名次</th>
+              <th>參賽者</th>
+              <th>最終淨資產</th>
+              <th>總盈虧額</th>
+              <th>累計報酬率</th>
+            </tr>
+          </thead>
+          <tbody id="finalRankingsBody">
+            <!-- 動態插入 -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="btnRestartGame">返回大廳</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全域訊息 Toast 提示容器 -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- 載入腳本 -->
+  <script type="module" src="js/chart.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

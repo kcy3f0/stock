@@ -1,0 +1,23 @@
+{
+  "name": "stock-multiplayer-battle",
+  "version": "1.0.0",
+  "description": "即時對戰多人連線股市模擬網頁遊戲",
+  "type": "module",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node --test tests/**/*.test.mjs"
+  },
+  "keywords": [
+    "stock",
+    "multiplayer",
+    "simulation",
+    "trading",
+    "websocket"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
